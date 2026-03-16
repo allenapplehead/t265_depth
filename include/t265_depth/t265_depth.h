@@ -1,21 +1,18 @@
 #pragma once
 
-#include <image_transport/image_transport.h>
-#include <image_transport/subscriber_filter.h>
+#include <rclcpp/rclcpp.hpp>
+#include <image_transport/image_transport.hpp>
 
-#include <ros/callback_queue.h>
-#include <ros/ros.h>
-
-#include <pcl_conversions/pcl_conversions.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <sensor_msgs/point_cloud2_iterator.h>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <std_msgs/msg/header.hpp>
 
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/opencv.hpp>
-
-#include "opencv2/ximgproc.hpp"
-#include <image_geometry/stereo_camera_model.h>
+#include <opencv2/ximgproc.hpp>
 
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
@@ -45,48 +42,42 @@ namespace t265_depth
     constexpr int kP1 = 120;
     constexpr int kP2 = 240;
     constexpr int kDisp12MaxDiff = -1;
-    constexpr bool kUseHHMode = false;
     constexpr int kSGBMMode = 0;
 
     constexpr bool kDoMedianBlur = true;
-    constexpr bool kEnableDynReconf = false;
 
-    class t265Depth
+    class t265Depth : public rclcpp::Node
     {
     public:
-        t265Depth(ros::NodeHandle &node, ros::NodeHandle &private_node);
+        explicit t265Depth(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
         ~t265Depth();
 
         void initializeRectificationMapping(std::string param_file_path);
         void publishCameraInfo(cv::Mat K1, cv::Mat K2,
                                cv::Mat P1, cv::Mat P2,
                                cv::Mat R1, cv::Mat R2);
-        void elaborateImages(const std_msgs::Header &header_msg);
+        void elaborateImages(const std_msgs::msg::Header &header_msg);
         void computePointcloud(const cv::Mat &input_disparity,
-                               sensor_msgs::PointCloud2 &pointcloud);
+                               sensor_msgs::msg::PointCloud2 &pointcloud);
 
     private:
-        void syncCallback(const sensor_msgs::Image::ConstPtr &image_msg_left,
-                          const sensor_msgs::Image::ConstPtr &image_msg_right);
+        void syncCallback(const sensor_msgs::msg::Image::ConstSharedPtr &image_msg_left,
+                          const sensor_msgs::msg::Image::ConstSharedPtr &image_msg_right);
 
-        image_transport::ImageTransport it_;
-        image_transport::Subscriber sub_img_left_;
-        image_transport::Subscriber sub_img_right_;
         image_transport::Publisher pub_img_left_rect_;
         image_transport::Publisher pub_img_right_rect_;
         image_transport::Publisher pub_disparity_;
 
-        ros::Publisher pub_camera_info_left_;
-        ros::Publisher pub_camera_info_right_;
-        ros::Publisher pub_pointcloud_;
+        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_camera_info_left_;
+        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_camera_info_right_;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_pointcloud_;
 
         std::string input_topic_left_;
         std::string input_topic_right_;
-        std::string output_topic_;
         std::string output_frame_id_;
 
-        sensor_msgs::CameraInfo output_camera_info_left_;
-        sensor_msgs::CameraInfo output_camera_info_right_;
+        sensor_msgs::msg::CameraInfo output_camera_info_left_;
+        sensor_msgs::msg::CameraInfo output_camera_info_right_;
 
         cv::Mat image_left_;
         cv::Mat undist_image_left_;
@@ -99,12 +90,10 @@ namespace t265_depth
         cv::Mat1f rmapy_;
 
         std::string param_file_path_;
-        int SGBM_;
         int process_every_nth_frame_ = 1;
         int frame_counter_ = 0;
         double scale_ = 1.0;
 
-        bool enable_dyn_reconf_;
         // stereo parameters
         int pre_filter_cap_;
         int sad_window_size_;
@@ -127,16 +116,21 @@ namespace t265_depth
         int disp_12_max_diff_;
 
         bool do_median_blur_;
+
         // output stereo
         float stereo_cx;
         float stereo_cy;
         float focal_length;
         float baseline = 0.064;
 
-        typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image,
-                                                          sensor_msgs::Image>
+        typedef message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image,
+                                                          sensor_msgs::msg::Image>
             MySyncPolicy;
-        typedef message_filters::Synchronizer<MySyncPolicy>
-            Sync;
+        typedef message_filters::Synchronizer<MySyncPolicy> Sync;
+
+        std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> image_sub_L_;
+        std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> image_sub_R_;
+        std::shared_ptr<Sync> sync_;
     };
+
 } // namespace t265_depth
