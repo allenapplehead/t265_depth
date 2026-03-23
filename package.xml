@@ -16,6 +16,8 @@
   <depend>std_msgs</depend>
   <depend>message_filters</depend>
 
+  <exec_depend>compressed_image_transport</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

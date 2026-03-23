@@ -2,6 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <image_transport/image_transport.hpp>
+#include <image_transport/subscriber_filter.hpp>
 
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
@@ -14,7 +15,6 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc.hpp>
 
-#include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/exact_time.h>
 
@@ -75,6 +75,7 @@ namespace t265_depth
         std::string input_topic_left_;
         std::string input_topic_right_;
         std::string output_frame_id_;
+        std::string input_transport_;
 
         sensor_msgs::msg::CameraInfo output_camera_info_left_;
         sensor_msgs::msg::CameraInfo output_camera_info_right_;
@@ -128,8 +129,8 @@ namespace t265_depth
             MySyncPolicy;
         typedef message_filters::Synchronizer<MySyncPolicy> Sync;
 
-        std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> image_sub_L_;
-        std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> image_sub_R_;
+        image_transport::SubscriberFilter image_sub_L_;
+        image_transport::SubscriberFilter image_sub_R_;
         std::shared_ptr<Sync> sync_;
     };
 

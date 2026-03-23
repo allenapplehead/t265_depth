@@ -10,6 +10,7 @@ namespace t265_depth
         declare_parameter("process_every_nth_frame", 1);
         declare_parameter("input_topic_left", std::string("/camera/fisheye1/image_raw"));
         declare_parameter("input_topic_right", std::string("/camera/fisheye2/image_raw"));
+        declare_parameter("input_transport", std::string("raw"));
         declare_parameter("output_frame_id", std::string("t265_depth"));
         declare_parameter("param_file_path", std::string(""));
         // stereo parameters
@@ -38,6 +39,7 @@ namespace t265_depth
         process_every_nth_frame_ = get_parameter("process_every_nth_frame").as_int();
         input_topic_left_        = get_parameter("input_topic_left").as_string();
         input_topic_right_       = get_parameter("input_topic_right").as_string();
+        input_transport_         = get_parameter("input_transport").as_string();
         output_frame_id_         = get_parameter("output_frame_id").as_string();
         param_file_path_         = get_parameter("param_file_path").as_string();
 
@@ -89,12 +91,11 @@ namespace t265_depth
         pub_pointcloud_ = create_publisher<sensor_msgs::msg::PointCloud2>("/points2", 10);
 
         // Synchronized image subscribers
-        image_sub_L_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
-            this, input_topic_left_);
-        image_sub_R_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
-            this, input_topic_right_);
+        RCLCPP_INFO(get_logger(), "Image transport: %s", input_transport_.c_str());
+        image_sub_L_.subscribe(this, input_topic_left_,  input_transport_);
+        image_sub_R_.subscribe(this, input_topic_right_, input_transport_);
 
-        sync_ = std::make_shared<Sync>(MySyncPolicy(10), *image_sub_L_, *image_sub_R_);
+        sync_ = std::make_shared<Sync>(MySyncPolicy(10), image_sub_L_, image_sub_R_);
         sync_->registerCallback(
             std::bind(&t265Depth::syncCallback, this,
                       std::placeholders::_1, std::placeholders::_2));
