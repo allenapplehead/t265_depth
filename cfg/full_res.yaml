@@ -3,6 +3,8 @@
 input: [848, 800]
 output: [848, 800]
 
+parameters: [{"input_transport": "compressed"}]
+
 # Camera calibration parameter
 K1: !!opencv-matrix
    rows: 3
