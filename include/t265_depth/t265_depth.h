@@ -16,7 +16,7 @@
 #include <opencv2/ximgproc.hpp>
 
 #include <message_filters/synchronizer.h>
-#include <message_filters/sync_policies/exact_time.h>
+#include <message_filters/sync_policies/approximate_time.h>
 
 using namespace cv;
 using namespace cv::ximgproc;
@@ -124,8 +124,8 @@ namespace t265_depth
         float focal_length;
         float baseline = 0.064;
 
-        typedef message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image,
-                                                          sensor_msgs::msg::Image>
+        typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image,
+                                                               sensor_msgs::msg::Image>
             MySyncPolicy;
         typedef message_filters::Synchronizer<MySyncPolicy> Sync;
 
