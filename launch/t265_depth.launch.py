@@ -28,6 +28,10 @@ def generate_launch_description():
             'scale',
             default_value='1.0',
             description='Image scale factor: 1, 0.5, or 0.33'),
+        DeclareLaunchArgument(
+            'input_transport',
+            default_value='raw',
+            description='image_transport type: raw or compressed'),
 
         Node(
             package='t265_depth',
@@ -41,6 +45,7 @@ def generate_launch_description():
                 'param_file_path':         LaunchConfiguration('param_file_path'),
                 'process_every_nth_frame': LaunchConfiguration('process_every_nth_frame'),
                 'scale':                   LaunchConfiguration('scale'),
+                'input_transport':         LaunchConfiguration('input_transport'),
 
                 # BM pre-filter parameters
                 'sad_window_size':   3,

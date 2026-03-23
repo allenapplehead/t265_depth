@@ -92,8 +92,8 @@ namespace t265_depth
 
         // Synchronized image subscribers
         RCLCPP_INFO(get_logger(), "Image transport: %s", input_transport_.c_str());
-        image_sub_L_.subscribe(this, input_topic_left_,  input_transport_);
-        image_sub_R_.subscribe(this, input_topic_right_, input_transport_);
+        image_sub_L_.subscribe(this, input_topic_left_,  input_transport_, rmw_qos_profile_sensor_data);
+        image_sub_R_.subscribe(this, input_topic_right_, input_transport_, rmw_qos_profile_sensor_data);
 
         sync_ = std::make_shared<Sync>(MySyncPolicy(10), image_sub_L_, image_sub_R_);
         sync_->registerCallback(
