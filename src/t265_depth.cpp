@@ -80,6 +80,33 @@ namespace t265_depth
 
         initializeRectificationMapping(param_file_path_);
 
+        // Build stereo matchers once so they are not re-created on every frame
+        if (use_sgbm_)
+        {
+            int mode;
+            if (sgbm_mode_ == 1)      mode = cv::StereoSGBM::MODE_HH;
+            else if (sgbm_mode_ == 2) mode = cv::StereoSGBM::MODE_SGBM_3WAY;
+            else                      mode = cv::StereoSGBM::MODE_SGBM;
+
+            stereo_sgbm_ = cv::StereoSGBM::create(
+                min_disparity_, num_disparities_, sad_window_size_,
+                p1_, p2_, disp_12_max_diff_,
+                pre_filter_cap_, uniqueness_ratio_,
+                speckle_window_size_, speckle_range_, mode);
+        }
+        else
+        {
+            stereo_bm_ = cv::StereoBM::create(num_disparities_, sad_window_size_);
+            stereo_bm_->setPreFilterType(pre_filter_type_);
+            stereo_bm_->setPreFilterSize(pre_filter_size_);
+            stereo_bm_->setPreFilterCap(pre_filter_cap_);
+            stereo_bm_->setMinDisparity(min_disparity_);
+            stereo_bm_->setTextureThreshold(texture_threshold_);
+            stereo_bm_->setUniquenessRatio(uniqueness_ratio_);
+            stereo_bm_->setSpeckleRange(speckle_range_);
+            stereo_bm_->setSpeckleWindowSize(speckle_window_size_);
+        }
+
         // Publishers
         pub_img_left_rect_  = image_transport::create_publisher(this, input_topic_left_ + "/rectified");
         pub_img_right_rect_ = image_transport::create_publisher(this, input_topic_right_ + "/rectified");
@@ -99,10 +126,22 @@ namespace t265_depth
         sync_->registerCallback(
             std::bind(&t265Depth::syncCallback, this,
                       std::placeholders::_1, std::placeholders::_2));
+
+        running_ = true;
+        worker_thread_ = std::thread(&t265Depth::workerThread, this);
     }
 
     t265Depth::~t265Depth()
     {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            running_ = false;
+        }
+        cv_.notify_all();
+        if (worker_thread_.joinable())
+        {
+            worker_thread_.join();
+        }
     }
 
     void t265Depth::syncCallback(const sensor_msgs::msg::Image::ConstSharedPtr &image_msg_left,
@@ -114,61 +153,80 @@ namespace t265_depth
         }
         frame_counter_ = 0;
 
-        image_left_  = cv_bridge::toCvCopy(image_msg_left,  "mono8")->image;
-        image_right_ = cv_bridge::toCvCopy(image_msg_right, "mono8")->image;
-
-        std_msgs::msg::Header header_out = image_msg_left->header;
-
-        if (scale_ < 1)
         {
-            resize(image_left_,  image_left_,  cv::Size(image_left_.cols  * scale_, image_left_.rows  * scale_));
-            resize(image_right_, image_right_, cv::Size(image_right_.cols * scale_, image_right_.rows * scale_));
+            std::lock_guard<std::mutex> lock(mutex_);
+            pending_left_  = image_msg_left;
+            pending_right_ = image_msg_right;
+            new_frame_     = true;
         }
+        cv_.notify_one();
+    }
 
-        elaborateImages(header_out);
+    void t265Depth::workerThread()
+    {
+        while (true)
+        {
+            sensor_msgs::msg::Image::ConstSharedPtr msg_left, msg_right;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                cv_.wait(lock, [this] { return new_frame_ || !running_; });
+                if (!running_) break;
+                msg_left   = pending_left_;
+                msg_right  = pending_right_;
+                new_frame_ = false;
+            }
 
-        sensor_msgs::msg::Image::SharedPtr out_img_msg_left;
-        sensor_msgs::msg::Image::SharedPtr out_img_msg_right;
-        try
-        {
-            out_img_msg_left  = cv_bridge::CvImage(std_msgs::msg::Header(), "mono8", undist_image_left_).toImageMsg();
-            out_img_msg_right = cv_bridge::CvImage(std_msgs::msg::Header(), "mono8", undist_image_right_).toImageMsg();
-        }
-        catch (cv_bridge::Exception &e)
-        {
-            RCLCPP_ERROR(get_logger(), "Could not convert from '%s' to 'mono8'.",
-                         image_msg_left->encoding.c_str());
-            return;
-        }
+            image_left_  = cv_bridge::toCvCopy(msg_left,  "mono8")->image;
+            image_right_ = cv_bridge::toCvCopy(msg_right, "mono8")->image;
 
-        // left
-        out_img_msg_left->header          = image_msg_left->header;
-        out_img_msg_left->header.frame_id = output_frame_id_;
-        output_camera_info_left_.header          = image_msg_left->header;
-        output_camera_info_left_.header.frame_id = output_frame_id_;
+            if (scale_ < 1)
+            {
+                resize(image_left_,  image_left_,
+                       cv::Size(image_left_.cols  * scale_, image_left_.rows  * scale_));
+                resize(image_right_, image_right_,
+                       cv::Size(image_right_.cols * scale_, image_right_.rows * scale_));
+            }
 
-        if (pub_img_left_rect_.getNumSubscribers() > 0)
-        {
-            pub_img_left_rect_.publish(out_img_msg_left);
-        }
-        if (pub_camera_info_left_->get_subscription_count() > 0)
-        {
-            pub_camera_info_left_->publish(output_camera_info_left_);
-        }
+            std_msgs::msg::Header header_out = msg_left->header;
+            elaborateImages(header_out);
 
-        // right
-        out_img_msg_right->header          = image_msg_right->header;
-        out_img_msg_right->header.frame_id = output_frame_id_;
-        output_camera_info_right_.header          = image_msg_right->header;
-        output_camera_info_right_.header.frame_id = output_frame_id_;
+            sensor_msgs::msg::Image::SharedPtr out_img_msg_left;
+            sensor_msgs::msg::Image::SharedPtr out_img_msg_right;
+            try
+            {
+                out_img_msg_left  = cv_bridge::CvImage(
+                    std_msgs::msg::Header(), "mono8", undist_image_left_).toImageMsg();
+                out_img_msg_right = cv_bridge::CvImage(
+                    std_msgs::msg::Header(), "mono8", undist_image_right_).toImageMsg();
+            }
+            catch (cv_bridge::Exception &e)
+            {
+                RCLCPP_ERROR(get_logger(), "Could not convert from '%s' to 'mono8'.",
+                             msg_left->encoding.c_str());
+                continue;
+            }
 
-        if (pub_img_right_rect_.getNumSubscribers() > 0)
-        {
-            pub_img_right_rect_.publish(out_img_msg_right);
-        }
-        if (pub_camera_info_right_->get_subscription_count() > 0)
-        {
-            pub_camera_info_right_->publish(output_camera_info_right_);
+            // left
+            out_img_msg_left->header          = msg_left->header;
+            out_img_msg_left->header.frame_id = output_frame_id_;
+            output_camera_info_left_.header          = msg_left->header;
+            output_camera_info_left_.header.frame_id = output_frame_id_;
+
+            if (pub_img_left_rect_.getNumSubscribers() > 0)
+                pub_img_left_rect_.publish(out_img_msg_left);
+            if (pub_camera_info_left_->get_subscription_count() > 0)
+                pub_camera_info_left_->publish(output_camera_info_left_);
+
+            // right
+            out_img_msg_right->header          = msg_right->header;
+            out_img_msg_right->header.frame_id = output_frame_id_;
+            output_camera_info_right_.header          = msg_right->header;
+            output_camera_info_right_.header.frame_id = output_frame_id_;
+
+            if (pub_img_right_rect_.getNumSubscribers() > 0)
+                pub_img_right_rect_.publish(out_img_msg_right);
+            if (pub_camera_info_right_->get_subscription_count() > 0)
+                pub_camera_info_right_->publish(output_camera_info_right_);
         }
     }
 
@@ -313,48 +371,11 @@ namespace t265_depth
 
             if (use_sgbm_)
             {
-                int mode;
-                if (sgbm_mode_ == 1)
-                {
-                    mode = cv::StereoSGBM::MODE_HH;
-                }
-                else if (sgbm_mode_ == 2)
-                {
-                    mode = cv::StereoSGBM::MODE_SGBM_3WAY;
-                }
-                else
-                {
-                    mode = cv::StereoSGBM::MODE_SGBM;
-                }
-
-                cv::Ptr<cv::StereoSGBM> left_matcher = cv::StereoSGBM::create(
-                    min_disparity_,
-                    num_disparities_,
-                    sad_window_size_,
-                    p1_,
-                    p2_,
-                    disp_12_max_diff_,
-                    pre_filter_cap_,
-                    uniqueness_ratio_,
-                    speckle_window_size_,
-                    speckle_range_,
-                    mode);
-                left_matcher->compute(undist_image_left_, undist_image_right_, left_disp);
+                stereo_sgbm_->compute(undist_image_left_, undist_image_right_, left_disp);
             }
             else
             {
-                cv::Ptr<cv::StereoBM> left_matcher =
-                    cv::StereoBM::create(num_disparities_, sad_window_size_);
-
-                left_matcher->setPreFilterType(pre_filter_type_);
-                left_matcher->setPreFilterSize(pre_filter_size_);
-                left_matcher->setPreFilterCap(pre_filter_cap_);
-                left_matcher->setMinDisparity(min_disparity_);
-                left_matcher->setTextureThreshold(texture_threshold_);
-                left_matcher->setUniquenessRatio(uniqueness_ratio_);
-                left_matcher->setSpeckleRange(speckle_range_);
-                left_matcher->setSpeckleWindowSize(speckle_window_size_);
-                left_matcher->compute(undist_image_left_, undist_image_right_, left_disp);
+                stereo_bm_->compute(undist_image_left_, undist_image_right_, left_disp);
             }
 
             if (do_median_blur_)

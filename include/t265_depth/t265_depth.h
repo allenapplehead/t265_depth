@@ -4,6 +4,10 @@
 #include <image_transport/image_transport.hpp>
 #include <image_transport/subscriber_filter.hpp>
 
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
@@ -63,6 +67,7 @@ namespace t265_depth
     private:
         void syncCallback(const sensor_msgs::msg::Image::ConstSharedPtr &image_msg_left,
                           const sensor_msgs::msg::Image::ConstSharedPtr &image_msg_right);
+        void workerThread();
 
         image_transport::Publisher pub_img_left_rect_;
         image_transport::Publisher pub_img_right_rect_;
@@ -84,6 +89,19 @@ namespace t265_depth
         cv::Mat undist_image_left_;
         cv::Mat image_right_;
         cv::Mat undist_image_right_;
+
+        // Cached stereo matchers (created once, reused every frame)
+        cv::Ptr<cv::StereoBM>   stereo_bm_;
+        cv::Ptr<cv::StereoSGBM> stereo_sgbm_;
+
+        // Worker thread
+        std::thread              worker_thread_;
+        std::mutex               mutex_;
+        std::condition_variable  cv_;
+        bool                     running_           = false;
+        bool                     new_frame_          = false;
+        sensor_msgs::msg::Image::ConstSharedPtr pending_left_;
+        sensor_msgs::msg::Image::ConstSharedPtr pending_right_;
 
         cv::Mat1f lmapx_;
         cv::Mat1f lmapy_;
