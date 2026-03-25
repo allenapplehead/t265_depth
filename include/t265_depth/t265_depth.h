@@ -64,9 +64,9 @@ namespace t265_depth
         void syncCallback(const sensor_msgs::msg::Image::ConstSharedPtr &image_msg_left,
                           const sensor_msgs::msg::Image::ConstSharedPtr &image_msg_right);
 
-        image_transport::Publisher pub_img_left_rect_;
-        image_transport::Publisher pub_img_right_rect_;
-        image_transport::Publisher pub_disparity_;
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_img_left_rect_;
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_img_right_rect_;
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_disparity_;
 
         rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_camera_info_left_;
         rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_camera_info_right_;

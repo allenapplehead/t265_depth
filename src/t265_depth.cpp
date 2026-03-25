@@ -79,13 +79,13 @@ namespace t265_depth
         initializeRectificationMapping(param_file_path_);
 
         // Publishers
-        pub_img_left_rect_  = image_transport::create_publisher(this, input_topic_left_ + "/rectified");
-        pub_img_right_rect_ = image_transport::create_publisher(this, input_topic_right_ + "/rectified");
+        pub_img_left_rect_  = create_publisher<sensor_msgs::msg::Image>(input_topic_left_ + "/rectified", 10);
+        pub_img_right_rect_ = create_publisher<sensor_msgs::msg::Image>(input_topic_right_ + "/rectified", 10);
         pub_camera_info_left_  = create_publisher<sensor_msgs::msg::CameraInfo>(
             input_topic_left_ + "/rectified/info", 10);
         pub_camera_info_right_ = create_publisher<sensor_msgs::msg::CameraInfo>(
             input_topic_right_ + "/rectified/info", 10);
-        pub_disparity_  = image_transport::create_publisher(this, "/disparity");
+        pub_disparity_  = create_publisher<sensor_msgs::msg::Image>("/disparity", 10);
         pub_pointcloud_ = create_publisher<sensor_msgs::msg::PointCloud2>("/points2", 10);
 
         // Synchronized image subscribers
@@ -146,9 +146,9 @@ namespace t265_depth
         output_camera_info_left_.header          = image_msg_left->header;
         output_camera_info_left_.header.frame_id = output_frame_id_;
 
-        if (pub_img_left_rect_.getNumSubscribers() > 0)
+        if (pub_img_left_rect_->get_subscription_count() > 0)
         {
-            pub_img_left_rect_.publish(out_img_msg_left);
+            pub_img_left_rect_->publish(*out_img_msg_left);
         }
         if (pub_camera_info_left_->get_subscription_count() > 0)
         {
@@ -161,9 +161,9 @@ namespace t265_depth
         output_camera_info_right_.header          = image_msg_right->header;
         output_camera_info_right_.header.frame_id = output_frame_id_;
 
-        if (pub_img_right_rect_.getNumSubscribers() > 0)
+        if (pub_img_right_rect_->get_subscription_count() > 0)
         {
-            pub_img_right_rect_.publish(out_img_msg_right);
+            pub_img_right_rect_->publish(*out_img_msg_right);
         }
         if (pub_camera_info_right_->get_subscription_count() > 0)
         {
@@ -361,12 +361,12 @@ namespace t265_depth
                 cv::medianBlur(left_disp, left_disp, 3);
             }
 
-            if (pub_disparity_.getNumSubscribers() > 0)
+            if (pub_disparity_->get_subscription_count() > 0)
             {
                 cv::normalize(left_disp, left_disp8u, 0, 255, cv::NORM_MINMAX, CV_8U);
                 auto out_disparity_msg =
                     cv_bridge::CvImage(header_msg, "mono8", left_disp8u).toImageMsg();
-                pub_disparity_.publish(out_disparity_msg);
+                pub_disparity_->publish(*out_disparity_msg);
             }
 
             sensor_msgs::msg::PointCloud2 pointcloud_msg;
