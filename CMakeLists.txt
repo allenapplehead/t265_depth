@@ -43,6 +43,11 @@ install(TARGETS ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/print_tf_full_precision
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY launch cfg include
   DESTINATION share/${PROJECT_NAME}
 )

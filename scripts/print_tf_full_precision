@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+
+import math
+import sys
+
+import rclpy
+from rclpy.duration import Duration
+from rclpy.node import Node
+from tf2_ros import Buffer, TransformException, TransformListener
+
+
+def quaternion_to_rotation_matrix(x: float, y: float, z: float, w: float):
+    xx = x * x
+    yy = y * y
+    zz = z * z
+    xy = x * y
+    xz = x * z
+    yz = y * z
+    wx = w * x
+    wy = w * y
+    wz = w * z
+
+    return [
+        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
+        [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
+        [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
+    ]
+
+
+class TfPrinter(Node):
+    def __init__(self, source_frame: str, target_frame: str):
+        super().__init__("print_tf_full_precision")
+        self.source_frame = source_frame
+        self.target_frame = target_frame
+        self.buffer = Buffer()
+        self.listener = TransformListener(self.buffer, self)
+
+        self.timer = self.create_timer(0.2, self._try_lookup)
+
+    def _try_lookup(self):
+        try:
+            tf_msg = self.buffer.lookup_transform(
+                self.target_frame,
+                self.source_frame,
+                rclpy.time.Time(),
+                timeout=Duration(seconds=1.0),
+            )
+        except TransformException as exc:
+            self.get_logger().warn(f"Waiting for transform: {exc}")
+            return
+
+        t = tf_msg.transform.translation
+        q = tf_msg.transform.rotation
+        matrix = quaternion_to_rotation_matrix(q.x, q.y, q.z, q.w)
+        q_norm = math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w)
+
+        print(
+            f"Transform {self.source_frame} -> {self.target_frame} at "
+            f"{tf_msg.header.stamp.sec}.{tf_msg.header.stamp.nanosec:09d}"
+        )
+        print(
+            "translation (x, y, z) = "
+            f"({t.x:.17g}, {t.y:.17g}, {t.z:.17g})"
+        )
+        print(
+            "quaternion (x, y, z, w) = "
+            f"({q.x:.17g}, {q.y:.17g}, {q.z:.17g}, {q.w:.17g})"
+        )
+        print(f"quaternion_norm = {q_norm:.17g}")
+        print("rotation_matrix =")
+        for row in matrix:
+            print("  [" + ", ".join(f"{value:.17g}" for value in row) + "]")
+
+        self.destroy_node()
+        rclpy.shutdown()
+
+
+def main():
+    rclpy.init(args=sys.argv)
+
+    source_frame = "camera_fisheye1_optical_frame"
+    target_frame = "camera_fisheye2_optical_frame"
+
+    if len(sys.argv) == 3:
+        source_frame = sys.argv[1]
+        target_frame = sys.argv[2]
+    elif len(sys.argv) not in (1, 3):
+        print(
+            "Usage: ros2 run t265_depth print_tf_full_precision "
+            "[source_frame target_frame]",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    node = TfPrinter(source_frame=source_frame, target_frame=target_frame)
+    rclpy.spin(node)
+
+
+if __name__ == "__main__":
+    main()
